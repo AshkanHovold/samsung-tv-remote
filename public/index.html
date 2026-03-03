@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Samsung TV Remote</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            samsung: {
+              blue: '#1428a0',
+              light: '#4a90d9',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+
+    .btn-remote {
+      @apply transition-all duration-150 active:scale-95 active:brightness-75 select-none cursor-pointer;
+    }
+
+    .btn-remote:active {
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
+    }
+
+    .glow {
+      box-shadow: 0 0 20px rgba(74, 144, 217, 0.15);
+    }
+
+    .dpad-btn {
+      @apply w-16 h-16 flex items-center justify-center rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white transition-all active:scale-90 active:bg-zinc-600 cursor-pointer select-none;
+    }
+
+    .status-dot {
+      @apply w-2.5 h-2.5 rounded-full inline-block;
+    }
+
+    .status-connected { @apply bg-emerald-400; box-shadow: 0 0 8px rgba(52, 211, 153, 0.6); }
+    .status-connecting { @apply bg-amber-400 animate-pulse; }
+    .status-disconnected { @apply bg-zinc-500; }
+    .status-error { @apply bg-red-400; box-shadow: 0 0 8px rgba(248, 113, 113, 0.6); }
+    .status-unauthorized { @apply bg-orange-400 animate-pulse; box-shadow: 0 0 8px rgba(251, 146, 60, 0.6); }
+
+    .app-card {
+      @apply flex flex-col items-center gap-2 p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700/70 cursor-pointer transition-all hover:scale-105 active:scale-95 select-none;
+    }
+
+    .key-btn {
+      @apply px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-sm font-medium transition-all active:scale-90 active:bg-zinc-600 cursor-pointer select-none;
+    }
+
+    .color-btn {
+      @apply w-10 h-10 rounded-full transition-all active:scale-90 cursor-pointer select-none border-2 border-transparent hover:border-white/30;
+    }
+
+    .tab-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      user-select: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      color: #71717a;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover {
+      color: #d4d4d8;
+      border-bottom-color: #3f3f46;
+    }
+    .tab-btn.active {
+      color: #ffffff;
+      border-bottom-color: #1428a0;
+    }
+    .tab-btn svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+    .tab-btn.active svg {
+      color: #4a90d9;
+    }
+
+    .toast {
+      animation: slideIn 0.3s ease-out, fadeOut 0.3s ease-in 1.7s forwards;
+    }
+    @keyframes slideIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-white min-h-screen">
+
+  <!-- Toast container -->
+  <div id="toasts" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2"></div>
+
+  <!-- Header -->
+  <header class="border-b border-zinc-800/50 bg-zinc-950/80 backdrop-blur-xl sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-samsung-blue flex items-center justify-center">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-semibold" id="tvName">Samsung TV Remote</h1>
+          <p class="text-xs text-zinc-500" id="tvModel">Connecting...</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800">
+          <span id="statusDot" class="status-dot status-disconnected"></span>
+          <span id="statusText" class="text-xs text-zinc-400">Disconnected</span>
+        </div>
+        <button onclick="toggleConnection()" id="connectBtn"
+          class="px-4 py-1.5 rounded-lg bg-samsung-blue hover:bg-samsung-blue/80 text-white text-sm font-medium transition-all">
+          Connect
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8">
+
+    <!-- Now Playing -->
+    <div id="nowPlaying" class="mb-6 hidden">
+      <div class="flex items-center gap-4 p-4 rounded-2xl border transition-all" id="nowPlayingCard" style="background: rgba(24,24,27,0.7); border-color: rgba(63,63,70,0.5);">
+        <!-- App icon -->
+        <div id="npIcon" class="w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-bold flex-shrink-0" style="background: #333;">
+          ?
+        </div>
+        <!-- Info -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-0.5">
+            <span id="npPulse" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" style="box-shadow: 0 0 6px rgba(52,211,153,0.6);"></span>
+            <span class="text-[10px] uppercase tracking-wider text-emerald-400 font-medium">Now Playing</span>
+          </div>
+          <p class="text-white font-semibold text-lg truncate" id="npName">--</p>
+          <p class="text-zinc-500 text-xs" id="npBackground"></p>
+        </div>
+        <!-- Quick actions for foreground app -->
+        <div class="flex gap-2 flex-shrink-0">
+          <button onclick="sendKey('KEY_PLAY')" class="w-10 h-10 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer" title="Play">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button onclick="sendKey('KEY_PAUSE')" class="w-10 h-10 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer" title="Pause">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <button onclick="sendKey('KEY_HOME')" class="w-10 h-10 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer" title="Home">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TV Info Bar -->
+    <div id="tvInfoBar" class="mb-8 p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 glow hidden">
+      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Power</p>
+          <p class="text-sm font-medium" id="infoPower">--</p>
+        </div>
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Resolution</p>
+          <p class="text-sm font-medium" id="infoRes">--</p>
+        </div>
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">OS</p>
+          <p class="text-sm font-medium" id="infoOS">--</p>
+        </div>
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Model</p>
+          <p class="text-sm font-medium" id="infoModel">--</p>
+        </div>
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Network</p>
+          <p class="text-sm font-medium" id="infoNetwork">--</p>
+        </div>
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">IP Address</p>
+          <p class="text-sm font-medium" id="infoIP">--</p>
+        </div>
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Dev Mode</p>
+          <p class="text-sm font-medium" id="infoDevMode">--</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex border-b border-zinc-800 mb-8 overflow-x-auto">
+      <button class="tab-btn active" data-tab="remote" onclick="switchTab('remote', this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        Remote
+      </button>
+      <button class="tab-btn" data-tab="apps" onclick="switchTab('apps', this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+        Apps
+      </button>
+      <button class="tab-btn" data-tab="numpad" onclick="switchTab('numpad', this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+        Numpad
+      </button>
+      <button class="tab-btn" data-tab="media" onclick="switchTab('media', this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Media
+      </button>
+      <button class="tab-btn" data-tab="browser" onclick="switchTab('browser', this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+        Browser
+      </button>
+      <button class="tab-btn" data-tab="tools" onclick="switchTab('tools', this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        Tools
+      </button>
+    </div>
+
+    <!-- Remote Tab -->
+    <div id="tab-remote" class="tab-content">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        <!-- Left Column - Quick Actions -->
+        <div class="space-y-6">
+          <!-- Power -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Power</h3>
+            <div class="flex gap-3">
+              <button onclick="sendKey('KEY_POWER')"
+                class="flex-1 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-medium transition-all active:scale-95 cursor-pointer">
+                <svg class="w-5 h-5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M5.636 5.636a9 9 0 000 12.728M12 3v9"/>
+                </svg>
+              </button>
+              <button onclick="wakeTV()"
+                class="flex-1 py-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-medium text-sm transition-all active:scale-95 cursor-pointer">
+                Wake (WOL)
+              </button>
+            </div>
+          </div>
+
+          <!-- Volume -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Volume</h3>
+            <div class="flex items-center gap-3">
+              <button onclick="sendKey('KEY_VOLDOWN')"
+                class="w-14 h-14 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                </svg>
+              </button>
+              <button onclick="sendKey('KEY_MUTE')"
+                class="flex-1 h-14 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer text-zinc-400 hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
+                </svg>
+              </button>
+              <button onclick="sendKey('KEY_VOLUP')"
+                class="w-14 h-14 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Channel -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Channel</h3>
+            <div class="flex items-center gap-3">
+              <button onclick="sendKey('KEY_CHDOWN')"
+                class="flex-1 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              <span class="text-zinc-500 text-sm">CH</span>
+              <button onclick="sendKey('KEY_CHUP')"
+                class="flex-1 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Source -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Input Source</h3>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="sendKey('KEY_SOURCE')" class="key-btn">Source</button>
+              <button onclick="sendKey('KEY_HDMI')" class="key-btn">HDMI</button>
+              <button onclick="sendKey('KEY_HDMI1')" class="key-btn">HDMI 1</button>
+              <button onclick="sendKey('KEY_HDMI2')" class="key-btn">HDMI 2</button>
+              <button onclick="sendKey('KEY_HDMI3')" class="key-btn">HDMI 3</button>
+              <button onclick="sendKey('KEY_DTV')" class="key-btn">TV</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center Column - D-Pad -->
+        <div class="flex flex-col items-center gap-6">
+          <div class="p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 w-full max-w-xs">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-6 text-center">Navigation</h3>
+
+            <!-- D-Pad -->
+            <div class="flex flex-col items-center gap-2">
+              <!-- Up -->
+              <button onclick="sendKey('KEY_UP')" class="dpad-btn">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7"/>
+                </svg>
+              </button>
+
+              <!-- Left / OK / Right -->
+              <div class="flex gap-2">
+                <button onclick="sendKey('KEY_LEFT')" class="dpad-btn">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/>
+                  </svg>
+                </button>
+                <button onclick="sendKey('KEY_ENTER')"
+                  class="w-16 h-16 flex items-center justify-center rounded-full bg-samsung-blue hover:bg-samsung-blue/80 text-white font-bold text-sm transition-all active:scale-90 cursor-pointer select-none shadow-lg shadow-samsung-blue/20">
+                  OK
+                </button>
+                <button onclick="sendKey('KEY_RIGHT')" class="dpad-btn">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Down -->
+              <button onclick="sendKey('KEY_DOWN')" class="dpad-btn">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Back / Home / Menu -->
+            <div class="flex justify-center gap-3 mt-6">
+              <button onclick="sendKey('KEY_RETURN')"
+                class="w-14 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer text-zinc-400 hover:text-white text-xs font-medium">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+              </button>
+              <button onclick="sendKey('KEY_HOME')"
+                class="w-14 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer text-zinc-400 hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1"/>
+                </svg>
+              </button>
+              <button onclick="sendKey('KEY_MENU')"
+                class="w-14 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer text-zinc-400 hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+              </button>
+              <button onclick="sendKey('KEY_TOOLS')"
+                class="w-14 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer text-zinc-400 hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Color Buttons -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 w-full max-w-xs">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4 text-center">Color Buttons</h3>
+            <div class="flex justify-center gap-4">
+              <button onclick="sendKey('KEY_RED')" class="color-btn bg-red-500 hover:bg-red-400"></button>
+              <button onclick="sendKey('KEY_GREEN')" class="color-btn bg-green-500 hover:bg-green-400"></button>
+              <button onclick="sendKey('KEY_YELLOW')" class="color-btn bg-yellow-500 hover:bg-yellow-400"></button>
+              <button onclick="sendKey('KEY_CYAN')" class="color-btn bg-cyan-500 hover:bg-cyan-400"></button>
+            </div>
+          </div>
+
+          <!-- Text Input -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 w-full max-w-xs">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4 text-center">Text Input</h3>
+            <div class="flex gap-2">
+              <input type="text" id="textInput" placeholder="Type text to send..."
+                class="flex-1 px-4 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:border-samsung-blue focus:ring-1 focus:ring-samsung-blue/50"
+                onkeydown="if(event.key==='Enter') sendTextToTV()" />
+              <button onclick="sendTextToTV()"
+                class="px-4 py-2.5 rounded-xl bg-samsung-blue hover:bg-samsung-blue/80 text-white text-sm font-medium transition-all active:scale-95 cursor-pointer">
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column - Extra Keys -->
+        <div class="space-y-6">
+          <!-- Smart Hub -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Smart Hub</h3>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="sendKey('KEY_CONTENTS')" class="key-btn">Smart Hub</button>
+              <button onclick="sendKey('KEY_GUIDE')" class="key-btn">Guide</button>
+              <button onclick="sendKey('KEY_INFO')" class="key-btn">Info</button>
+              <button onclick="sendKey('KEY_AMBIENT')" class="key-btn">Ambient</button>
+            </div>
+          </div>
+
+          <!-- Picture Mode -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Picture & Sound</h3>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="sendKey('KEY_PICTURE_SIZE')" class="key-btn">Pic Size</button>
+              <button onclick="sendKey('KEY_PMODE')" class="key-btn">Pic Mode</button>
+              <button onclick="sendKey('KEY_SOUND_MODE')" class="key-btn">Sound</button>
+              <button onclick="sendKey('KEY_SLEEP')" class="key-btn">Sleep</button>
+            </div>
+          </div>
+
+          <!-- Quick Keys -->
+          <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Quick Keys</h3>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="sendKey('KEY_EXIT')" class="key-btn">Exit</button>
+              <button onclick="sendKey('KEY_PRECH')" class="key-btn">Prev CH</button>
+              <button onclick="sendKey('KEY_FAVCH')" class="key-btn">Favorites</button>
+              <button onclick="sendKey('KEY_CH_LIST')" class="key-btn">CH List</button>
+              <button onclick="sendKey('KEY_SUBTITLE')" class="key-btn">Subtitle</button>
+              <button onclick="sendKey('KEY_CAPTION')" class="key-btn">Caption</button>
+              <button onclick="sendKey('KEY_TTX_MIX')" class="key-btn">Teletext</button>
+              <button onclick="sendKey('KEY_AUTO_PROGRAM')" class="key-btn">Auto Prog</button>
+            </div>
+          </div>
+
+          <!-- Keyboard Shortcuts Hint -->
+          <div class="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-800/30">
+            <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-3">Keyboard Shortcuts</h3>
+            <div class="space-y-1 text-xs text-zinc-500">
+              <p><span class="text-zinc-400 font-mono">Arrow keys</span> Navigation</p>
+              <p><span class="text-zinc-400 font-mono">Enter</span> OK / Select</p>
+              <p><span class="text-zinc-400 font-mono">Backspace</span> Back</p>
+              <p><span class="text-zinc-400 font-mono">Escape</span> Exit</p>
+              <p><span class="text-zinc-400 font-mono">M</span> Mute</p>
+              <p><span class="text-zinc-400 font-mono">+ / -</span> Volume</p>
+              <p><span class="text-zinc-400 font-mono">H</span> Home</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Apps Tab -->
+    <div id="tab-apps" class="tab-content hidden">
+      <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-medium">Installed Apps</h3>
+          <button onclick="loadApps()" class="text-xs text-samsung-light hover:text-white transition-colors cursor-pointer">
+            Refresh
+          </button>
+        </div>
+        <div id="appGrid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+          <div class="text-zinc-500 text-sm col-span-full text-center py-8">
+            Click "Refresh" to load installed apps
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Launch (verified installed apps) -->
+      <div class="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 class="text-sm font-medium mb-4">Quick Launch</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <button onclick="launchApp('3201907018807')" class="app-card">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-red-700 to-black flex items-center justify-center text-xl font-bold">N</div>
+            <span class="text-xs text-zinc-400">Netflix</span>
+          </button>
+          <button onclick="launchApp('111299001912')" class="app-card">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center text-xl font-bold">Y</div>
+            <span class="text-xs text-zinc-400">YouTube</span>
+          </button>
+          <button onclick="launchApp('MCmYXNxgcu.DisneyPlus')" class="app-card">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-800 to-blue-900 flex items-center justify-center text-xl font-bold">D+</div>
+            <span class="text-xs text-zinc-400">Disney+</span>
+          </button>
+          <button onclick="launchApp('3201807016597')" class="app-card">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-zinc-700 to-zinc-900 flex items-center justify-center">
+              <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+            </div>
+            <span class="text-xs text-zinc-400">Apple TV</span>
+          </button>
+          <button onclick="launchApp('3201606009684')" class="app-card">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-green-600 to-green-800 flex items-center justify-center text-xl font-bold">S</div>
+            <span class="text-xs text-zinc-400">Spotify</span>
+          </button>
+          <button onclick="launchApp('kIciSQlYEM.plex')" class="app-card">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center text-xl font-bold">P</div>
+            <span class="text-xs text-zinc-400">Plex</span>
+          </button>
+          <button onclick="launchApp('3201710015037')" class="app-card">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-zinc-600 to-zinc-800 flex items-center justify-center">
+              <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+            </div>
+            <span class="text-xs text-zinc-400">Gallery</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Numpad Tab -->
+    <div id="tab-numpad" class="tab-content hidden">
+      <div class="max-w-xs mx-auto">
+        <div class="p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+          <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-6 text-center">Number Pad</h3>
+          <div class="grid grid-cols-3 gap-3">
+            <button onclick="sendKey('KEY_1')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">1</button>
+            <button onclick="sendKey('KEY_2')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">2</button>
+            <button onclick="sendKey('KEY_3')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">3</button>
+            <button onclick="sendKey('KEY_4')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">4</button>
+            <button onclick="sendKey('KEY_5')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">5</button>
+            <button onclick="sendKey('KEY_6')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">6</button>
+            <button onclick="sendKey('KEY_7')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">7</button>
+            <button onclick="sendKey('KEY_8')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">8</button>
+            <button onclick="sendKey('KEY_9')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">9</button>
+            <button onclick="sendKey('KEY_PRECH')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-400 transition-all active:scale-90 cursor-pointer">Prev</button>
+            <button onclick="sendKey('KEY_0')" class="h-16 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xl font-semibold transition-all active:scale-90 cursor-pointer">0</button>
+            <button onclick="sendKey('KEY_ENTER')" class="h-16 rounded-xl bg-samsung-blue hover:bg-samsung-blue/80 text-sm font-medium transition-all active:scale-90 cursor-pointer">Enter</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Media Tab -->
+    <div id="tab-media" class="tab-content hidden">
+      <div class="max-w-md mx-auto space-y-6">
+        <div class="p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+          <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-6 text-center">Playback Controls</h3>
+          <div class="flex flex-col items-center gap-4">
+            <!-- Main controls -->
+            <div class="flex items-center gap-3">
+              <button onclick="sendKey('KEY_REWIND')"
+                class="w-14 h-14 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
+                </svg>
+              </button>
+              <button onclick="sendKey('KEY_PLAY')"
+                class="w-16 h-16 rounded-full bg-samsung-blue hover:bg-samsung-blue/80 flex items-center justify-center transition-all active:scale-90 cursor-pointer shadow-lg shadow-samsung-blue/20">
+                <svg class="w-7 h-7 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </button>
+              <button onclick="sendKey('KEY_PAUSE')"
+                class="w-14 h-14 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+              </button>
+              <button onclick="sendKey('KEY_FF')"
+                class="w-14 h-14 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+                </svg>
+              </button>
+            </div>
+            <!-- Secondary controls -->
+            <div class="flex gap-3">
+              <button onclick="sendKey('KEY_STOP')" class="key-btn">Stop</button>
+              <button onclick="sendKey('KEY_REC')" class="key-btn text-red-400">Record</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Browser Tab -->
+    <div id="tab-browser" class="tab-content hidden">
+      <div class="max-w-lg mx-auto">
+        <div class="p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+          <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Open URL on TV Browser</h3>
+          <div class="flex gap-2">
+            <input type="url" id="browserUrl" placeholder="https://example.com"
+              class="flex-1 px-4 py-3 rounded-xl bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:border-samsung-blue focus:ring-1 focus:ring-samsung-blue/50"
+              onkeydown="if(event.key==='Enter') openBrowser()" />
+            <button onclick="openBrowser()"
+              class="px-6 py-3 rounded-xl bg-samsung-blue hover:bg-samsung-blue/80 text-white text-sm font-medium transition-all active:scale-95 cursor-pointer">
+              Open
+            </button>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-2">
+            <button onclick="openUrl('https://youtube.com')" class="key-btn text-left">YouTube.com</button>
+            <button onclick="openUrl('https://reddit.com')" class="key-btn text-left">Reddit.com</button>
+            <button onclick="openUrl('https://twitch.tv')" class="key-btn text-left">Twitch.tv</button>
+            <button onclick="openUrl('https://svtplay.se')" class="key-btn text-left">SVT Play</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tools Tab -->
+    <div id="tab-tools" class="tab-content hidden">
+      <div class="max-w-2xl mx-auto space-y-6">
+        <!-- Key Tester -->
+        <div class="p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+          <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Key Tester</h3>
+          <p class="text-xs text-zinc-500 mb-3">Send any Samsung remote key code directly</p>
+          <div class="flex gap-2">
+            <input type="text" id="customKey" placeholder="KEY_VOLUP"
+              class="flex-1 px-4 py-3 rounded-xl bg-zinc-800 border border-zinc-700 text-white font-mono text-sm focus:outline-none focus:border-samsung-blue focus:ring-1 focus:ring-samsung-blue/50"
+              onkeydown="if(event.key==='Enter') sendCustomKey()" />
+            <button onclick="sendCustomKey()"
+              class="px-6 py-3 rounded-xl bg-samsung-blue hover:bg-samsung-blue/80 text-white text-sm font-medium transition-all active:scale-95 cursor-pointer">
+              Send
+            </button>
+          </div>
+        </div>
+
+        <!-- API Info -->
+        <div class="p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+          <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">API Endpoints</h3>
+          <div class="space-y-2 font-mono text-xs">
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">GET</span>
+              <span class="text-zinc-300">/api/tv/info</span>
+              <span class="text-zinc-600 ml-auto">Device info</span>
+            </div>
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">GET</span>
+              <span class="text-zinc-300">/api/tv/status</span>
+              <span class="text-zinc-600 ml-auto">Connection status</span>
+            </div>
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">GET</span>
+              <span class="text-zinc-300">/api/tv/apps</span>
+              <span class="text-zinc-600 ml-auto">List apps</span>
+            </div>
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold">POST</span>
+              <span class="text-zinc-300">/api/tv/key</span>
+              <span class="text-zinc-600 ml-auto">Send key</span>
+            </div>
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold">POST</span>
+              <span class="text-zinc-300">/api/tv/key/hold</span>
+              <span class="text-zinc-600 ml-auto">Hold key</span>
+            </div>
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold">POST</span>
+              <span class="text-zinc-300">/api/tv/text</span>
+              <span class="text-zinc-600 ml-auto">Send text</span>
+            </div>
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold">POST</span>
+              <span class="text-zinc-300">/api/tv/browser</span>
+              <span class="text-zinc-600 ml-auto">Open URL</span>
+            </div>
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold">POST</span>
+              <span class="text-zinc-300">/api/tv/apps/:id/launch</span>
+              <span class="text-zinc-600 ml-auto">Launch app</span>
+            </div>
+            <div class="flex gap-2 items-start p-2 rounded-lg bg-zinc-800/50">
+              <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold">POST</span>
+              <span class="text-zinc-300">/api/tv/wake</span>
+              <span class="text-zinc-600 ml-auto">Wake on LAN</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Key Reference -->
+        <div class="p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/50">
+          <h3 class="text-xs uppercase tracking-wider text-zinc-500 mb-4">Common Key Codes</h3>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-1 font-mono text-xs text-zinc-400">
+            <span>KEY_POWER</span><span>KEY_POWEROFF</span><span>KEY_UP</span>
+            <span>KEY_DOWN</span><span>KEY_LEFT</span><span>KEY_RIGHT</span>
+            <span>KEY_ENTER</span><span>KEY_RETURN</span><span>KEY_HOME</span>
+            <span>KEY_MENU</span><span>KEY_SOURCE</span><span>KEY_GUIDE</span>
+            <span>KEY_VOLUP</span><span>KEY_VOLDOWN</span><span>KEY_MUTE</span>
+            <span>KEY_CHUP</span><span>KEY_CHDOWN</span><span>KEY_CH_LIST</span>
+            <span>KEY_HDMI</span><span>KEY_HDMI1</span><span>KEY_HDMI2</span>
+            <span>KEY_PLAY</span><span>KEY_PAUSE</span><span>KEY_STOP</span>
+            <span>KEY_FF</span><span>KEY_REWIND</span><span>KEY_REC</span>
+            <span>KEY_INFO</span><span>KEY_TOOLS</span><span>KEY_EXIT</span>
+            <span>KEY_RED</span><span>KEY_GREEN</span><span>KEY_YELLOW</span>
+            <span>KEY_CYAN</span><span>KEY_0 - KEY_9</span><span>KEY_SUBTITLE</span>
+            <span>KEY_SLEEP</span><span>KEY_AMBIENT</span><span>KEY_DTV</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // --- State ---
+    let currentTab = 'remote';
+
+    // --- Tab switching ---
+    function switchTab(tab, btnEl) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(`tab-${tab}`).classList.remove('hidden');
+      // Find the actual tab button (in case click landed on the svg/text child)
+      const btn = btnEl || document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+      if (btn) btn.classList.add('active');
+      currentTab = tab;
+
+      if (tab === 'apps') loadApps();
+    }
+
+    // --- Toast notification ---
+    function toast(msg, type = 'success') {
+      const container = document.getElementById('toasts');
+      const el = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-500/90 text-white',
+        error: 'bg-red-500/90 text-white',
+        info: 'bg-zinc-700/90 text-white',
+      };
+      el.className = `toast px-4 py-2 rounded-lg text-sm font-medium backdrop-blur ${colors[type] || colors.info}`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 2000);
+    }
+
+    // --- API calls ---
+    async function apiCall(method, path, body) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(path, opts);
+      return res.json();
+    }
+
+    async function sendKey(key) {
+      try {
+        await apiCall('POST', '/api/tv/key', { key });
+        toast(`Sent ${key.replace('KEY_', '')}`, 'info');
+      } catch (e) {
+        toast('Failed to send key', 'error');
+      }
+    }
+
+    async function sendTextToTV() {
+      const input = document.getElementById('textInput');
+      const text = input.value.trim();
+      if (!text) return;
+      try {
+        await apiCall('POST', '/api/tv/text', { text });
+        toast(`Sent text: "${text}"`, 'info');
+        input.value = '';
+      } catch (e) {
+        toast('Failed to send text', 'error');
+      }
+    }
+
+    async function sendCustomKey() {
+      const input = document.getElementById('customKey');
+      const key = input.value.trim();
+      if (!key) return;
+      await sendKey(key.startsWith('KEY_') ? key : `KEY_${key.toUpperCase()}`);
+    }
+
+    async function wakeTV() {
+      try {
+        await apiCall('POST', '/api/tv/wake');
+        toast('Wake-on-LAN sent', 'success');
+      } catch (e) {
+        toast('WOL failed', 'error');
+      }
+    }
+
+    async function toggleConnection() {
+      const dot = document.getElementById('statusDot');
+      if (dot.classList.contains('status-connected')) {
+        await apiCall('POST', '/api/tv/disconnect');
+        toast('Disconnected', 'info');
+      } else {
+        await apiCall('POST', '/api/tv/connect');
+        toast('Connecting...', 'info');
+      }
+      setTimeout(pollStatus, 1500);
+    }
+
+    async function openBrowser() {
+      const url = document.getElementById('browserUrl').value.trim();
+      if (!url) return;
+      try {
+        await apiCall('POST', '/api/tv/browser', { url });
+        toast(`Opening ${url}`, 'success');
+      } catch (e) {
+        toast('Failed to open URL', 'error');
+      }
+    }
+
+    function openUrl(url) {
+      document.getElementById('browserUrl').value = url;
+      openBrowser();
+    }
+
+    async function launchApp(appId) {
+      try {
+        await apiCall('POST', `/api/tv/apps/${appId}/launch`);
+        toast('Launching app...', 'success');
+      } catch (e) {
+        toast('Failed to launch app', 'error');
+      }
+    }
+
+    async function loadApps() {
+      const grid = document.getElementById('appGrid');
+      grid.innerHTML = '<div class="text-zinc-500 text-sm col-span-full text-center py-8">Loading...</div>';
+      try {
+        const data = await apiCall('GET', '/api/tv/apps');
+        const apps = data.apps || data || [];
+        if (!Array.isArray(apps) || apps.length === 0) {
+          grid.innerHTML = '<div class="text-zinc-500 text-sm col-span-full text-center py-8">No apps found. Try launching an app from Quick Launch first.</div>';
+          return;
+        }
+        grid.innerHTML = apps.map(app => `
+          <button onclick="launchApp('${app.appId}')" class="app-card">
+            ${app.icon ? `<img src="${app.icon}" class="w-12 h-12 rounded-xl" alt="${app.name}" onerror="this.style.display='none'"/>` : `<div class="w-12 h-12 rounded-xl bg-zinc-700 flex items-center justify-center text-lg font-bold">${(app.name || '?')[0]}</div>`}
+            <span class="text-xs text-zinc-400 text-center truncate w-full">${app.name || app.appId}</span>
+          </button>
+        `).join('');
+      } catch (e) {
+        grid.innerHTML = '<div class="text-zinc-500 text-sm col-span-full text-center py-8">Failed to load apps</div>';
+      }
+    }
+
+    // --- TV Info ---
+    async function loadTVInfo() {
+      try {
+        const data = await apiCall('GET', '/api/tv/info');
+        const dev = data.device || {};
+        document.getElementById('tvName').textContent = dev.name || 'Samsung TV';
+        document.getElementById('tvModel').textContent = `${dev.modelName || ''} — ${dev.ip || ''}`;
+        document.getElementById('infoPower').textContent = dev.PowerState || '--';
+        document.getElementById('infoRes').textContent = dev.resolution || '--';
+        document.getElementById('infoOS').textContent = dev.OS || '--';
+        document.getElementById('infoModel').textContent = dev.modelName || '--';
+        document.getElementById('infoNetwork').textContent = dev.networkType || '--';
+        document.getElementById('infoIP').textContent = dev.ip || '--';
+        document.getElementById('infoDevMode').textContent = dev.developerMode === '1' ? 'Enabled' : 'Disabled';
+        document.getElementById('tvInfoBar').classList.remove('hidden');
+
+        const powerEl = document.getElementById('infoPower');
+        if (dev.PowerState === 'on') {
+          powerEl.classList.add('text-emerald-400');
+        } else {
+          powerEl.classList.add('text-red-400');
+        }
+
+        const devModeEl = document.getElementById('infoDevMode');
+        if (dev.developerMode === '1') {
+          devModeEl.classList.add('text-emerald-400');
+        }
+      } catch (e) {
+        // TV might be off
+      }
+    }
+
+    // --- Status polling ---
+    async function pollStatus() {
+      try {
+        const data = await apiCall('GET', '/api/tv/status');
+        const dot = document.getElementById('statusDot');
+        const text = document.getElementById('statusText');
+        const btn = document.getElementById('connectBtn');
+
+        dot.className = `status-dot status-${data.status}`;
+        text.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+        btn.textContent = data.status === 'connected' ? 'Disconnect' : 'Connect';
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // --- Keyboard shortcuts ---
+    document.addEventListener('keydown', (e) => {
+      // Don't intercept when typing in inputs
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const keyMap = {
+        'ArrowUp': 'KEY_UP',
+        'ArrowDown': 'KEY_DOWN',
+        'ArrowLeft': 'KEY_LEFT',
+        'ArrowRight': 'KEY_RIGHT',
+        'Enter': 'KEY_ENTER',
+        'Backspace': 'KEY_RETURN',
+        'Escape': 'KEY_EXIT',
+        'm': 'KEY_MUTE',
+        'M': 'KEY_MUTE',
+        'h': 'KEY_HOME',
+        'H': 'KEY_HOME',
+        '+': 'KEY_VOLUP',
+        '=': 'KEY_VOLUP',
+        '-': 'KEY_VOLDOWN',
+        'p': 'KEY_PLAY',
+        'P': 'KEY_PAUSE',
+      };
+
+      // Number keys
+      if (e.key >= '0' && e.key <= '9' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        sendKey(`KEY_${e.key}`);
+        return;
+      }
+
+      const mapped = keyMap[e.key];
+      if (mapped && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        sendKey(mapped);
+      }
+    });
+
+    // --- Now Playing ---
+    const APP_COLORS = {
+      'Netflix': '#E50914',
+      'YouTube': '#FF0000',
+      'Disney+': '#113CCF',
+      'Apple TV': '#1a1a1a',
+      'Spotify': '#1DB954',
+      'Plex': '#E5A00D',
+      'Gallery': '#444444',
+    };
+
+    const APP_INITIALS = {
+      'Netflix': 'N',
+      'YouTube': 'Y',
+      'Disney+': 'D+',
+      'Apple TV': '',
+      'Spotify': 'S',
+      'Plex': 'P',
+      'Gallery': '',
+    };
+
+    let lastForeground = null;
+
+    async function pollNowPlaying() {
+      try {
+        const data = await apiCall('GET', '/api/tv/now-playing');
+        const container = document.getElementById('nowPlaying');
+        const card = document.getElementById('nowPlayingCard');
+        const icon = document.getElementById('npIcon');
+        const name = document.getElementById('npName');
+        const bg = document.getElementById('npBackground');
+        const pulse = document.getElementById('npPulse');
+
+        if (data.foreground) {
+          container.classList.remove('hidden');
+          const app = data.foreground;
+          const color = APP_COLORS[app.name] || '#333';
+          const initial = APP_INITIALS[app.name];
+
+          // Accent border
+          card.style.borderColor = color + '40';
+          card.style.background = `linear-gradient(135deg, ${color}10 0%, rgba(24,24,27,0.7) 50%)`;
+
+          // Icon
+          icon.style.background = color;
+          if (app.name === 'Apple TV') {
+            icon.innerHTML = '<svg class="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>';
+          } else if (app.name === 'Gallery') {
+            icon.innerHTML = '<svg class="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>';
+          } else {
+            icon.textContent = initial || app.name[0];
+          }
+
+          name.textContent = app.name;
+          pulse.style.background = color;
+          pulse.style.boxShadow = `0 0 6px ${color}99`;
+
+          // Background apps
+          if (data.background && data.background.length > 0) {
+            const names = data.background.map(a => a.name).join(', ');
+            bg.textContent = `Background: ${names}`;
+          } else {
+            bg.textContent = '';
+          }
+
+          lastForeground = app.name;
+        } else if (lastForeground) {
+          // Nothing visible — show "Home Screen"
+          container.classList.remove('hidden');
+          card.style.borderColor = 'rgba(63,63,70,0.5)';
+          card.style.background = 'rgba(24,24,27,0.7)';
+          icon.style.background = '#1428a0';
+          icon.innerHTML = '<svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1"/></svg>';
+          name.textContent = 'Home Screen';
+          pulse.style.background = '#4a90d9';
+          pulse.style.boxShadow = '0 0 6px rgba(74,144,217,0.6)';
+
+          if (data.background && data.background.length > 0) {
+            const names = data.background.map(a => a.name).join(', ');
+            bg.textContent = `Background: ${names}`;
+          } else {
+            bg.textContent = '';
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // --- Init ---
+    loadTVInfo();
+    pollStatus();
+    pollNowPlaying();
+    setInterval(pollStatus, 5000);
+    setInterval(loadTVInfo, 30000);
+    setInterval(pollNowPlaying, 5000);
+  </script>
+
+</body>
+</html>
