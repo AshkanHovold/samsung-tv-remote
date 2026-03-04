@@ -16,8 +16,26 @@ const PORT = process.env.PORT || 3200;
 const TV_MAC = "A0:D7:F3:6F:24:F4";
 const TAILSCALE_HOST = "optiplex-1.taile9c3be.ts.net";
 
+// --- Seerr (Overseerr) Proxy ---
+const SEERR_BASE = "http://latitude:5055/api/v1";
+const SEERR_API_KEY = "MTc3MTc5NTI2NDIyMWViMjc4YTlhLWRhOTYtNDVkNy05NjMyLWNjNjZmNTc0MWFlYQ==";
+let genreCache = { movie: [], tv: [] };
+
 app.use(express.json());
+
+// CORS for Seerr TV app (served from different origin during dev/TV)
+app.use("/api", (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "public")));
+
+// Serve Seerr TV app at /seerr
+app.use("/seerr", express.static("/home/ashkan/seerr-tv"));
 
 // --- TV WebSocket Connection ---
 const TOKEN_FILE = path.join(__dirname, ".tv-token");
@@ -137,12 +155,12 @@ function sendText(text) {
     if (!tvSocket || tvSocket.readyState !== WebSocket.OPEN) {
       return reject(new Error("Not connected to TV"));
     }
+    const b64 = Buffer.from(text).toString("base64");
     const payload = JSON.stringify({
       method: "ms.remote.control",
       params: {
-        Cmd: text,
-        DataOfCmd: "base64",
-        Option: "false",
+        Cmd: b64,
+        DataOfCmd: b64,
         TypeOfRemote: "SendInputString",
       },
     });
@@ -397,6 +415,18 @@ app.post("/api/tv/browser", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "url is required" });
   try {
+    // First close the browser if it's already open
+    try {
+      await fetch(
+        `http://${TV_IP}:${TV_PORT}/api/v2/applications/org.tizen.browser`,
+        { method: "DELETE" }
+      );
+      await new Promise((r) => setTimeout(r, 1500));
+    } catch (e) {
+      /* ignore close errors */
+    }
+
+    // Try REST API launch with metaTag
     const resp = await fetch(
       `http://${TV_IP}:${TV_PORT}/api/v2/applications/org.tizen.browser`,
       {
@@ -407,7 +437,132 @@ app.post("/api/tv/browser", async (req, res) => {
         }),
       }
     );
+
+    // Also try WebSocket deep link as backup
+    if (tvSocket && tvSocket.readyState === WebSocket.OPEN) {
+      const payload = JSON.stringify({
+        method: "ms.channel.emit",
+        params: {
+          event: "ed.apps.launch",
+          to: "host",
+          data: {
+            appId: "org.tizen.browser",
+            action_type: "DEEP_LINK",
+            metaTag: url,
+          },
+        },
+      });
+      tvSocket.send(payload);
+    }
+
     res.json({ ok: resp.ok, url });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Launch YouTube on TV with video ID via Lounge API
+app.post("/api/tv/youtube", async (req, res) => {
+  const { videoId } = req.body;
+  console.log("[YouTube] Request received, videoId:", videoId);
+  if (!videoId) return res.status(400).json({ error: "videoId is required" });
+  try {
+    // Step 1: Close YouTube if running, then relaunch
+    console.log("[YouTube] Closing YouTube...");
+    await fetch(`http://${TV_IP}:${TV_PORT}/api/v2/applications/111299001912`, { method: "DELETE" }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 2000));
+    console.log("[YouTube] Launching YouTube...");
+    await fetch(`http://${TV_IP}:${TV_PORT}/api/v2/applications/111299001912`, { method: "POST" }).catch(() => {});
+
+    // Step 2: Poll DIAL until YouTube is running and has a screenId
+    let screenId = null;
+    for (let i = 0; i < 15; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const dialResp = await fetch(`http://${TV_IP}:8080/ws/apps/YouTube`);
+        const dialXml = await dialResp.text();
+        const stateMatch = dialXml.match(/<state>([^<]+)<\/state>/);
+        const screenIdMatch = dialXml.match(/<screenId>([^<]+)<\/screenId>/);
+        console.log(`[YouTube] Poll ${i + 1}: state=${stateMatch ? stateMatch[1] : "?"}, screenId=${screenIdMatch ? "yes" : "no"}`);
+        if (stateMatch && stateMatch[1] === "running" && screenIdMatch) {
+          screenId = screenIdMatch[1];
+          break;
+        }
+      } catch (e) {
+        console.log(`[YouTube] Poll ${i + 1}: DIAL error`, e.message);
+      }
+    }
+    if (!screenId) throw new Error("YouTube did not start in time");
+
+    // Step 3: Get lounge token
+    const tokenResp = await fetch("https://www.youtube.com/api/lounge/pairing/get_lounge_token_batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `screen_ids=${screenId}`,
+    });
+    const tokenData = await tokenResp.json();
+    const loungeToken = tokenData.screens[0].loungeToken;
+
+    // Step 4: Bind session AND send setPlaylist in one request (session expires between separate requests)
+    const params = new URLSearchParams({
+      device: "REMOTE_CONTROL",
+      id: "seerr-tv-remote",
+      name: "SeerrTV",
+      app: "seerr-tv-remote",
+      "mdx-version": "3",
+      VER: "8",
+      v: "2",
+      loungeIdToken: loungeToken,
+      RID: "1",
+      t: "1",
+    });
+
+    const body = new URLSearchParams({
+      count: "1",
+      ofs: "0",
+      req0__sc: "setPlaylist",
+      req0_videoId: videoId,
+      req0_currentTime: "0",
+      req0_currentIndex: "-1",
+    });
+
+    const loungeResp = await fetch(`https://www.youtube.com/api/lounge/bc/bind?${params}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-YouTube-LoungeId-Token": loungeToken,
+      },
+      body: body.toString(),
+    });
+
+    const loungeText = await loungeResp.text();
+    console.log("[YouTube] Lounge response status:", loungeResp.status);
+    console.log("[YouTube] Lounge response contains videoId:", loungeText.includes(videoId));
+    console.log("[YouTube] Lounge response snippet:", loungeText.substring(0, 300));
+    const success = loungeText.includes(videoId) || loungeText.includes("playlistModified");
+    res.json({ ok: success, videoId, loungeStatus: loungeResp.status });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Launch Plex on TV (deep linking not supported on Samsung Plex app)
+app.post("/api/tv/plex", async (req, res) => {
+  console.log("[Plex] Launch request received");
+  try {
+    const resp = await fetch(
+      `http://${TV_IP}:${TV_PORT}/api/v2/applications/kIciSQlYEM.plex`,
+      { method: "POST" }
+    );
+    if (!resp.ok) {
+      const resp2 = await fetch(
+        `http://${TV_IP}:${TV_PORT}/api/v2/applications/3201512006963`,
+        { method: "POST" }
+      );
+      res.json({ ok: resp2.ok, appId: "3201512006963" });
+    } else {
+      res.json({ ok: true, appId: "kIciSQlYEM.plex" });
+    }
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -424,9 +579,178 @@ app.post("/api/tv/wake", (req, res) => {
   });
 });
 
+// --- Seerr Proxy Routes ---
+
+// --- Response cache (TTL in ms) ---
+const responseCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCached(key) {
+  const entry = responseCache.get(key);
+  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
+  if (entry) responseCache.delete(key);
+  return null;
+}
+
+function setCache(key, data) {
+  responseCache.set(key, { data, ts: Date.now() });
+  // Evict old entries if cache grows too large
+  if (responseCache.size > 200) {
+    const now = Date.now();
+    for (const [k, v] of responseCache) {
+      if (now - v.ts > CACHE_TTL) responseCache.delete(k);
+    }
+  }
+}
+
+async function seerrFetch(endpoint, options = {}) {
+  const url = `${SEERR_BASE}${endpoint}`;
+  const resp = await fetch(url, {
+    ...options,
+    headers: { "X-Api-Key": SEERR_API_KEY, "Content-Type": "application/json", ...options.headers },
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    const err = new Error(`Seerr ${resp.status}: ${text.substring(0, 200)}`);
+    err.status = resp.status;
+    throw err;
+  }
+  return resp.json();
+}
+
+// Cached version for GET endpoints
+async function seerrFetchCached(endpoint) {
+  const cached = getCached(endpoint);
+  if (cached) return cached;
+  const data = await seerrFetch(endpoint);
+  setCache(endpoint, data);
+  return data;
+}
+
+// Load genre cache at startup
+async function loadGenres() {
+  try {
+    const [movie, tv] = await Promise.all([
+      seerrFetch("/genres/movie"),
+      seerrFetch("/genres/tv"),
+    ]);
+    genreCache = { movie, tv };
+    console.log(`Seerr genres cached: ${movie.length} movie, ${tv.length} tv`);
+  } catch (e) {
+    console.error("Failed to load Seerr genres:", e.message);
+  }
+}
+
+app.get("/api/seerr/genres", (req, res) => res.json(genreCache));
+
+app.get("/api/seerr/discover/movies", async (req, res) => {
+  try {
+    const { page = 1, genre } = req.query;
+    let endpoint = `/discover/movies?page=${page}`;
+    if (genre) endpoint += `&genre=${genre}`;
+    res.json(await seerrFetchCached(endpoint));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/discover/tv", async (req, res) => {
+  try {
+    const { page = 1, genre } = req.query;
+    let endpoint = `/discover/tv?page=${page}`;
+    if (genre) endpoint += `&genre=${genre}`;
+    res.json(await seerrFetchCached(endpoint));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/discover/movies/upcoming", async (req, res) => {
+  try {
+    res.json(await seerrFetchCached(`/discover/movies/upcoming?page=${req.query.page || 1}`));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/discover/tv/upcoming", async (req, res) => {
+  try {
+    res.json(await seerrFetchCached(`/discover/tv/upcoming?page=${req.query.page || 1}`));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/discover/watchlist", async (req, res) => {
+  try {
+    res.json(await seerrFetchCached(`/discover/watchlist?page=${req.query.page || 1}`));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/discover/trending", async (req, res) => {
+  try {
+    res.json(await seerrFetchCached(`/discover/trending?page=${req.query.page || 1}`));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/search", async (req, res) => {
+  try {
+    const { query, page = 1 } = req.query;
+    if (!query) return res.status(400).json({ error: "query is required" });
+    res.json(await seerrFetchCached(`/search?query=${encodeURIComponent(query)}&page=${page}`));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/movie/:tmdbId", async (req, res) => {
+  try {
+    res.json(await seerrFetchCached(`/movie/${req.params.tmdbId}`));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/tv/:tmdbId", async (req, res) => {
+  try {
+    res.json(await seerrFetchCached(`/tv/${req.params.tmdbId}`));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/requests", async (req, res) => {
+  try {
+    const { take = 20, skip = 0 } = req.query;
+    const cacheKey = `/request?take=${take}&skip=${skip}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json(cached);
+
+    const data = await seerrFetch(`/request?take=${take}&skip=${skip}&sort=added&filter=all`);
+    if (data.results) {
+      await Promise.all(data.results.map(async (r) => {
+        if (!r.media || !r.media.tmdbId) return;
+        try {
+          const type = r.type === "tv" ? "tv" : "movie";
+          const detail = await seerrFetchCached(`/${type}/${r.media.tmdbId}`);
+          r.media.title = detail.title || detail.name || null;
+          r.media.name = detail.name || detail.title || null;
+          r.media.posterPath = detail.posterPath || null;
+        } catch (e) { /* skip enrichment on error */ }
+      }));
+    }
+    setCache(cacheKey, data);
+    res.json(data);
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.get("/api/seerr/request/count", async (req, res) => {
+  try {
+    res.json(await seerrFetchCached("/request/count"));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+app.post("/api/seerr/request", async (req, res) => {
+  try {
+    const { mediaType, mediaId } = req.body;
+    if (!mediaType || !mediaId) return res.status(400).json({ error: "mediaType and mediaId required" });
+    res.json(await seerrFetch("/request", {
+      method: "POST",
+      body: JSON.stringify({ mediaType, mediaId }),
+    }));
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
 // --- Start ---
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Samsung TV Remote running at http://localhost:${PORT}`);
   console.log(`TV IP: ${TV_IP}`);
+  loadGenres();
   connectToTV();
 });
